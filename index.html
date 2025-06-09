@@ -2,33 +2,38 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GIF 幀轉檔與下載</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>圖片編輯 + 特效 → GIF</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js"></script>
   <style>
     body { font-family: sans-serif; text-align: center; margin: 2em; }
-    canvas { border: 1px solid #ccc; display: block; margin: 1em auto; }
+    canvas { border: 1px solid #ccc; display: block; margin: 1em auto; cursor: grab; }
     #output img { max-width: 100px; margin: 4px; }
+    .controls, .color-controls { margin: 1em 0; }
     #downloadBtn { display: none; margin-top: 1em; }
-    .controls { margin: 1em 0; }
+    input[type=number] { width: 60px; }
   </style>
 </head>
 <body>
-  <h1>圖片特效 → GIF 下載</h1>
-  <input type="file" id="upload" accept="image/*" /><br />
-  
-<div class="controls">
-  <label><input type="checkbox" id="rotateCheck" checked /> 旋轉</label>
-  <label style="margin-left: 1em;"><input type="checkbox" id="shakeCheck" /> 抖動</label>
-  <label style="margin-left: 1em;"><input type="checkbox" id="beatCheck" /> 律動</label>
-</div>
+  <h1>圖片編輯 + 特效 → GIF</h1>
+  <input type="file" id="upload" accept="image/*"><br/>
 
+  <div class="controls">
+    <label><input type="checkbox" id="rotateCheck" checked> 旋轉</label>
+    <label style="margin-left: 1em;"><input type="checkbox" id="shakeCheck"> 抖動</label>
+    <label style="margin-left: 1em;"><input type="checkbox" id="beatCheck"> 律動</label>
+  </div>
+
+  <div class="color-controls">
+    <label>背景色：</label>
+    <input type="color" id="bgColorPicker" value="#ffffff">
+  </div>
 
   <button id="generateBtn">生成並下載 GIF</button>
   <canvas id="canvas" width="256" height="256"></canvas>
   <div id="output"></div>
-  <a id="downloadBtn" download="effect.gif">⬇️ 下載 GIF</a>
+  <a id="downloadBtn">下載 GIF</a>
 
   <script>
     const canvas = document.getElementById('canvas');
@@ -38,45 +43,95 @@
     const downloadBtn = document.getElementById('downloadBtn');
     const rotateCheck = document.getElementById('rotateCheck');
     const shakeCheck = document.getElementById('shakeCheck');
-    let image = null;
+    const beatCheck = document.getElementById('beatCheck');
+    const bgColorPicker = document.getElementById('bgColorPicker');
 
+    let image = null;
+    let baseFileName = "effect";
     const totalFrames = 50;
-    const shakeRange = 4;
+    const shakeRange = 5;
+
+    let userScale = 1;
+    let userOffsetX = 0;
+    let userOffsetY = 0;
+    let isDragging = false;
+    let lastX = 0, lastY = 0;
+
+    canvas.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      lastX = e.offsetX;
+      lastY = e.offsetY;
+      canvas.style.cursor = 'grabbing';
+    });
+
+    canvas.addEventListener('mouseup', () => {
+      isDragging = false;
+      canvas.style.cursor = 'grab';
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      isDragging = false;
+      canvas.style.cursor = 'grab';
+    });
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.offsetX - lastX;
+      const dy = e.offsetY - lastY;
+      userOffsetX += dx;
+      userOffsetY += dy;
+      lastX = e.offsetX;
+      lastY = e.offsetY;
+      drawFrame(0);
+    });
+
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      userScale += delta;
+      userScale = Math.max(0.1, Math.min(userScale, 5));
+      drawFrame(0);
+    });
 
     upload.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
+      // 只取檔名不含副檔名
+      baseFileName = file.name.replace(/\.[^/.]+$/, "");
       const reader = new FileReader();
       reader.onload = (evt) => {
         const img = new Image();
         img.onload = () => {
           image = img;
+          userScale = 1;
+          userOffsetX = 0;
+          userOffsetY = 0;
           drawFrame(0);
-          console.log('[上傳圖片] 已載入並繪製第一幀');
         };
         img.src = evt.target.result;
       };
       reader.readAsDataURL(file);
     });
 
-    function drawFrame(frame) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    function drawFrame(frame, forGIF = false) {
       if (!image) return;
+
+      const bgHex = bgColorPicker.value;
+      ctx.fillStyle = bgHex;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       const doRotate = rotateCheck.checked;
       const doShake = shakeCheck.checked;
-      const doBeat = document.getElementById('beatCheck').checked;
+      const doBeat = beatCheck.checked;
 
       const beatPattern = doBeat
         ? [1, 1, 1, 1.2, 1.1, 1, 1, 1, 1.2, 1.1]
         : [1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
-
       const beatIndex = frame % beatPattern.length;
       const pulse = beatPattern[beatIndex];
 
       const baseScale = Math.min(canvas.width / image.width, canvas.height / image.height) * 1.8;
-      const scale = baseScale * pulse;
-
+      const scale = baseScale * pulse * userScale;
       const w = image.width * scale;
       const h = image.height * scale;
 
@@ -85,16 +140,24 @@
       const dy = doShake ? (Math.random() * shakeRange * 2 - shakeRange) : 0;
 
       ctx.save();
-      ctx.translate(canvas.width / 2 + dx, canvas.height / 2 + dy);
-      ctx.rotate(angle);
-      ctx.drawImage(image, -w / 2, -h / 2, w, h);
+      if (forGIF) {
+        // 產生GIF時：
+        // 旋轉中心固定Canvas中點，旋轉後整體偏移userOffsetX/Y在旋轉外，保持旋轉中心不受影響
+        ctx.translate(canvas.width / 2 + dx, canvas.height / 2 + dy); // 旋轉中心: canvas中心加抖動
+        ctx.rotate(angle);
+        // 繪製圖片時考慮使用者偏移
+        ctx.drawImage(image, -w / 2 + userOffsetX, -h / 2 + userOffsetY, w, h);
+      } else {
+        // 編輯時：旋轉中心就是圖片本身中心+使用者偏移（目前行為）
+        ctx.translate(canvas.width / 2 + dx + userOffsetX, canvas.height / 2 + dy + userOffsetY);
+        ctx.rotate(angle);
+        ctx.drawImage(image, -w / 2, -h / 2, w, h);
+      }
       ctx.restore();
     }
 
-
     generateBtn.addEventListener('click', () => {
       if (!image) return alert('請先上傳圖片');
-      console.log('[生成開始] 初始化 GIF 實例');
 
       const gif = new GIF({
         workers: 2,
@@ -106,37 +169,27 @@
       });
 
       const output = document.getElementById('output');
-      output.innerHTML = '<p>🔄 產生中...</p>';
+      output.innerHTML = '<p>產生中...</p>';
       downloadBtn.style.display = 'none';
 
       let frame = 0;
-
       function renderNext() {
-        drawFrame(frame);
+        drawFrame(frame, true);  // 傳 true 代表產生 GIF 用，旋轉中心固定Canvas中心
         gif.addFrame(canvas, { copy: true, delay: 80 });
-        console.log(`[GIF] 加入第 ${frame} 幀`);
         frame++;
         if (frame < totalFrames) {
-          setTimeout(renderNext, 20); // 控制預覽節奏
+          setTimeout(renderNext, 20);
         } else {
-          console.log('[GIF] 所有幀加入完成，開始 render');
           gif.on('finished', (blob) => {
             const url = URL.createObjectURL(blob);
             const img = document.createElement('img');
             img.src = url;
-            img.alt = '產生的 GIF';
-
-            output.innerHTML = '<p>✅ 預覽：</p>';
+            output.innerHTML = '<p>預覽：</p>';
             output.appendChild(img);
-
             downloadBtn.href = url;
+            downloadBtn.download = baseFileName + ".gif";
             downloadBtn.style.display = 'inline-block';
-
-            console.log('[完成] GIF 生成成功，已附加至頁面');
           });
-          gif.on('abort', () => console.error('[錯誤] GIF 被中斷'));
-          gif.on('error', (err) => console.error('[錯誤] GIF 發生錯誤', err));
-          gif.on('progress', (p) => console.log(`[進度] ${Math.round(p * 100)}%`));
           gif.render();
         }
       }
