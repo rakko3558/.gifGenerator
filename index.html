@@ -10,9 +10,10 @@
     body { font-family: sans-serif; text-align: center; margin: 2em; }
     canvas { border: 1px solid #ccc; display: block; margin: 1em auto; cursor: grab; }
     #output img { max-width: 100px; margin: 4px; }
-    .controls, .color-controls { margin: 1em 0; }
+    .controls, .color-controls, .sliders { margin: 1em 0; }
     #downloadBtn { display: none; margin-top: 1em; }
     input[type=number] { width: 60px; }
+    label { display: inline-block; margin: 0.5em; }
   </style>
 </head>
 <body>
@@ -21,8 +22,13 @@
 
   <div class="controls">
     <label><input type="checkbox" id="rotateCheck" checked> 旋轉</label>
-    <label style="margin-left: 1em;"><input type="checkbox" id="shakeCheck"> 抖動</label>
-    <label style="margin-left: 1em;"><input type="checkbox" id="beatCheck"> 律動</label>
+    <label><input type="range" id="rotateSpeed" min="1" max="10" value="5"> 旋轉速度</label>
+
+    <label><input type="checkbox" id="shakeCheck"> 抖動</label>
+    <label><input type="range" id="shakeAmount" min="1" max="20" value="5"> 抖動強度</label>
+
+    <label><input type="checkbox" id="beatCheck"> 律動</label>
+    <label><input type="range" id="beatStrength" min="1" max="20" value="10"> 律動幅度</label>
   </div>
 
   <div class="color-controls">
@@ -36,6 +42,7 @@
   <a id="downloadBtn">下載 GIF</a>
 
   <script>
+    
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const upload = document.getElementById('upload');
@@ -44,12 +51,13 @@
     const rotateCheck = document.getElementById('rotateCheck');
     const shakeCheck = document.getElementById('shakeCheck');
     const beatCheck = document.getElementById('beatCheck');
+    const rotateSpeed = document.getElementById('rotateSpeed');
+    const shakeAmount = document.getElementById('shakeAmount');
+    const beatStrength = document.getElementById('beatStrength');
     const bgColorPicker = document.getElementById('bgColorPicker');
 
     let image = null;
     let baseFileName = "effect";
-    const totalFrames = 50;
-    const shakeRange = 5;
 
     let userScale = 1;
     let userOffsetX = 0;
@@ -69,11 +77,6 @@
       canvas.style.cursor = 'grab';
     });
 
-    canvas.addEventListener('mouseleave', () => {
-      isDragging = false;
-      canvas.style.cursor = 'grab';
-    });
-
     canvas.addEventListener('mousemove', (e) => {
       if (!isDragging) return;
       const dx = e.offsetX - lastX;
@@ -82,7 +85,7 @@
       userOffsetY += dy;
       lastX = e.offsetX;
       lastY = e.offsetY;
-      drawFrame(0);
+      drawFrame(0, 0); // 畫一次畫面，角度用0
     });
 
     canvas.addEventListener('wheel', (e) => {
@@ -90,13 +93,12 @@
       const delta = e.deltaY > 0 ? -0.05 : 0.05;
       userScale += delta;
       userScale = Math.max(0.1, Math.min(userScale, 5));
-      drawFrame(0);
+      drawFrame(0, 0);
     });
 
     upload.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
-      // 只取檔名不含副檔名
       baseFileName = file.name.replace(/\.[^/.]+$/, "");
       const reader = new FileReader();
       reader.onload = (evt) => {
@@ -106,14 +108,15 @@
           userScale = 1;
           userOffsetX = 0;
           userOffsetY = 0;
-          drawFrame(0);
+          drawFrame(0, 0);
         };
         img.src = evt.target.result;
       };
       reader.readAsDataURL(file);
     });
 
-    function drawFrame(frame, forGIF = false) {
+    // 修改 drawFrame，讓它能接受「固定角度」參數 (angle)
+    function drawFrame(frame, forGIF = false, fixedAngle = null) {
       if (!image) return;
 
       const bgHex = bgColorPicker.value;
@@ -124,31 +127,27 @@
       const doShake = shakeCheck.checked;
       const doBeat = beatCheck.checked;
 
-      const beatPattern = doBeat
-        ? [1, 1, 1, 1.2, 1.1, 1, 1, 1, 1.2, 1.1]
-        : [1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+      const beatPattern = [1, 1, 1, 1.5, 1.3, 1, 1, 1, 1.5, 1.3];
       const beatIndex = frame % beatPattern.length;
-      const pulse = beatPattern[beatIndex];
+      const pulse = doBeat ? 1 + (beatStrength.value / 100) * (beatPattern[beatIndex] - 1) : 1;
 
       const baseScale = Math.min(canvas.width / image.width, canvas.height / image.height) * 1.8;
       const scale = baseScale * pulse * userScale;
       const w = image.width * scale;
       const h = image.height * scale;
 
-      const angle = doRotate ? (frame / totalFrames) * 2 * Math.PI : 0;
-      const dx = doShake ? (Math.random() * shakeRange * 2 - shakeRange) : 0;
-      const dy = doShake ? (Math.random() * shakeRange * 2 - shakeRange) : 0;
+      // 如果有傳 fixedAngle 就用它，否則依 frame 計算角度
+      const angle = fixedAngle !== null ? fixedAngle : (doRotate ? (frame / 50) * 2 * Math.PI : 0);
+
+      const dx = doShake ? (Math.random() * shakeAmount.value * 2 - shakeAmount.value) : 0;
+      const dy = doShake ? (Math.random() * shakeAmount.value * 2 - shakeAmount.value) : 0;
 
       ctx.save();
       if (forGIF) {
-        // 產生GIF時：
-        // 旋轉中心固定Canvas中點，旋轉後整體偏移userOffsetX/Y在旋轉外，保持旋轉中心不受影響
-        ctx.translate(canvas.width / 2 + dx, canvas.height / 2 + dy); // 旋轉中心: canvas中心加抖動
+        ctx.translate(canvas.width / 2 + dx, canvas.height / 2 + dy);
         ctx.rotate(angle);
-        // 繪製圖片時考慮使用者偏移
         ctx.drawImage(image, -w / 2 + userOffsetX, -h / 2 + userOffsetY, w, h);
       } else {
-        // 編輯時：旋轉中心就是圖片本身中心+使用者偏移（目前行為）
         ctx.translate(canvas.width / 2 + dx + userOffsetX, canvas.height / 2 + dy + userOffsetY);
         ctx.rotate(angle);
         ctx.drawImage(image, -w / 2, -h / 2, w, h);
@@ -172,13 +171,24 @@
       output.innerHTML = '<p>產生中...</p>';
       downloadBtn.style.display = 'none';
 
+      const baseDelay = 80; // 固定每幀切換時間80ms
+      const rotateEnabled = rotateCheck.checked;
+      const rotateSpeedValue = rotateEnabled ? parseFloat(rotateSpeed.value) : 5;
+
+      const baseFrameCount = 30; // 基礎幀數(轉速1時)
+      const totalFrames = Math.max(10, Math.floor(baseFrameCount * rotateSpeedValue));
+
       let frame = 0;
+
       function renderNext() {
-        drawFrame(frame, true);  // 傳 true 代表產生 GIF 用，旋轉中心固定Canvas中心
-        gif.addFrame(canvas, { copy: true, delay: 80 });
+        // 每幀角度固定轉滿360度
+        const angle = rotateEnabled ? frame * (2 * Math.PI / totalFrames) : 0;
+
+        drawFrame(frame, true, angle);
+        gif.addFrame(canvas, { copy: true, delay: baseDelay });
         frame++;
         if (frame < totalFrames) {
-          setTimeout(renderNext, 20);
+          setTimeout(renderNext, 0);
         } else {
           gif.on('finished', (blob) => {
             const url = URL.createObjectURL(blob);
