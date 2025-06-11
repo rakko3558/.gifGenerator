@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>圖片編輯 + 特效 → GIF</title>
+  <title>.gifGenerator</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js"></script>
   <style>
@@ -12,24 +12,29 @@
     #output img { max-width: 100px; margin: 4px; }
     .controls, .color-controls, .sliders { margin: 1em 0; }
     #downloadBtn { display: none; margin-top: 1em; }
-    input[type=number] { width: 60px; }
+    input[type=number], input[type=range] { width: 100px; }
     label { display: inline-block; margin: 0.5em; }
   </style>
 </head>
 <body>
-  <h1>圖片編輯 + 特效 → GIF</h1>
+  
+  <a href="./index2.html">前往貼圖特效</a><br/>
   <input type="file" id="upload" accept="image/*"><br/>
 
   <div class="controls">
     <label><input type="checkbox" id="rotateCheck" checked> 旋轉</label>
-    <label><input type="range" id="rotateSpeed" min="1" max="10" value="5"> 旋轉速度</label>
+    <label><input type="range" id="rotateSpeed" min="1" max="10" value="5"> 旋轉速度</label><br/>
 
     <label><input type="checkbox" id="shakeCheck"> 抖動</label>
-    <label><input type="range" id="shakeAmount" min="1" max="20" value="5"> 抖動強度</label>
+    <label><input type="range" id="shakeAmount" min="1" max="20" value="5"> 抖動強度</label><br/>
 
     <label><input type="checkbox" id="beatCheck"> 律動</label>
-    <label><input type="range" id="beatStrength" min="1" max="20" value="10"> 律動幅度</label>
-  </div>
+    <label><input type="range" id="beatStrength" min="1" max="20" value="10"> 律動幅度</label><br/>
+<label><input type="checkbox" id="waveCheck"> 扭曲</label>
+<label><input type="range" id="waveAmplitude" min="1" max="50" value="10"> 波浪幅度</label>
+<label><input type="range" id="waveFrequency" min="1" max="100" value="20"> 波浪頻率</label>
+<label><input type="range" id="waveLength" min="1" max="100" value="10"> 波浪長度</label>
+ </div>
 
   <div class="color-controls">
     <label>背景色：</label>
@@ -42,7 +47,6 @@
   <a id="downloadBtn">下載 GIF</a>
 
   <script>
-    
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const upload = document.getElementById('upload');
@@ -51,104 +55,48 @@
     const rotateCheck = document.getElementById('rotateCheck');
     const shakeCheck = document.getElementById('shakeCheck');
     const beatCheck = document.getElementById('beatCheck');
+    const waveCheck = document.getElementById('waveCheck');
     const rotateSpeed = document.getElementById('rotateSpeed');
     const shakeAmount = document.getElementById('shakeAmount');
     const beatStrength = document.getElementById('beatStrength');
     const bgColorPicker = document.getElementById('bgColorPicker');
+    const waveAmplitude = document.getElementById('waveAmplitude');
+    const waveFrequency = document.getElementById('waveFrequency');
 
     let image = null;
     let baseFileName = "effect";
+    let userScale = 1, userOffsetX = 0, userOffsetY = 0;
+    let isDragging = false, lastX = 0, lastY = 0;
 
-    let userScale = 1;
-    let userOffsetX = 0;
-    let userOffsetY = 0;
-    let isDragging = false;
-    let lastX = 0, lastY = 0;
+    canvas.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      lastX = e.offsetX;
+      lastY = e.offsetY;
+      canvas.style.cursor = 'grabbing';
+    });
 
-    // === 滑鼠操作（桌機） ===
-canvas.addEventListener('mousedown', (e) => {
-  isDragging = true;
-  lastX = e.offsetX;
-  lastY = e.offsetY;
-  canvas.style.cursor = 'grabbing';
-});
+    canvas.addEventListener('mouseup', () => {
+      isDragging = false;
+      canvas.style.cursor = 'grab';
+    });
 
-canvas.addEventListener('mouseup', () => {
-  isDragging = false;
-  canvas.style.cursor = 'grab';
-});
+    canvas.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.offsetX - lastX;
+      const dy = e.offsetY - lastY;
+      userOffsetX += dx;
+      userOffsetY += dy;
+      lastX = e.offsetX;
+      lastY = e.offsetY;
+      drawFrame(0, 0);
+    });
 
-canvas.addEventListener('mousemove', (e) => {
-  if (!isDragging) return;
-  const dx = e.offsetX - lastX;
-  const dy = e.offsetY - lastY;
-  userOffsetX += dx;
-  userOffsetY += dy;
-  lastX = e.offsetX;
-  lastY = e.offsetY;
-  drawFrame(0, 0);
-});
-
-canvas.addEventListener('wheel', (e) => {
-  e.preventDefault();
-  const delta = e.deltaY > 0 ? -0.05 : 0.05;
-  userScale = Math.max(0.1, Math.min(userScale + delta, 5));
-  drawFrame(0, 0);
-});
-
-// === 觸控支援（手機） ===
-let pinchStartDistance = 0;
-let pinchStartScale = 1;
-
-canvas.addEventListener('touchstart', (e) => {
-  if (e.touches.length === 1) {
-    const touch = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    lastX = touch.clientX - rect.left;
-    lastY = touch.clientY - rect.top;
-    isDragging = true;
-    canvas.style.cursor = 'grabbing';
-  } else if (e.touches.length === 2) {
-    pinchStartDistance = getTouchDistance(e.touches);
-    pinchStartScale = userScale;
-  }
-});
-
-canvas.addEventListener('touchmove', (e) => {
-  if (e.touches.length === 1 && isDragging) {
-    e.preventDefault();
-    const touch = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    const x = touch.clientX - rect.left;
-    const y = touch.clientY - rect.top;
-    const dx = x - lastX;
-    const dy = y - lastY;
-    userOffsetX += dx;
-    userOffsetY += dy;
-    lastX = x;
-    lastY = y;
-    drawFrame(0, 0);
-  } else if (e.touches.length === 2) {
-    e.preventDefault();
-    const newDistance = getTouchDistance(e.touches);
-    const scaleDelta = newDistance / pinchStartDistance;
-    userScale = Math.min(5, Math.max(0.1, pinchStartScale * scaleDelta));
-    drawFrame(0, 0);
-  }
-}, { passive: false });
-
-canvas.addEventListener('touchend', () => {
-  isDragging = false;
-  canvas.style.cursor = 'grab';
-});
-
-// 工具函式：兩點距離
-function getTouchDistance(touches) {
-  const dx = touches[0].clientX - touches[1].clientX;
-  const dy = touches[0].clientY - touches[1].clientY;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      userScale = Math.max(0.1, Math.min(userScale + delta, 5));
+      drawFrame(0, 0);
+    });
 
     upload.addEventListener('change', (e) => {
       const file = e.target.files[0];
@@ -169,10 +117,8 @@ function getTouchDistance(touches) {
       reader.readAsDataURL(file);
     });
 
-    // 修改 drawFrame，讓它能接受「固定角度」參數 (angle)
     function drawFrame(frame, forGIF = false, fixedAngle = null) {
       if (!image) return;
-
       const bgHex = bgColorPicker.value;
       ctx.fillStyle = bgHex;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -180,6 +126,7 @@ function getTouchDistance(touches) {
       const doRotate = rotateCheck.checked;
       const doShake = shakeCheck.checked;
       const doBeat = beatCheck.checked;
+      const doWave = waveCheck.checked;
 
       const beatPattern = [1, 1, 1, 1.5, 1.3, 1, 1, 1, 1.5, 1.3];
       const beatIndex = frame % beatPattern.length;
@@ -190,25 +137,33 @@ function getTouchDistance(touches) {
       const w = image.width * scale;
       const h = image.height * scale;
 
-      // 如果有傳 fixedAngle 就用它，否則依 frame 計算角度
       const angle = fixedAngle !== null ? fixedAngle : (doRotate ? (frame / 50) * 2 * Math.PI : 0);
-
       const dx = doShake ? (Math.random() * shakeAmount.value * 2 - shakeAmount.value) : 0;
       const dy = doShake ? (Math.random() * shakeAmount.value * 2 - shakeAmount.value) : 0;
 
       ctx.save();
-      if (forGIF) {
-        ctx.translate(canvas.width / 2 + dx, canvas.height / 2 + dy);
-        ctx.rotate(angle);
-        ctx.drawImage(image, -w / 2 + userOffsetX, -h / 2 + userOffsetY, w, h);
+      ctx.translate(canvas.width / 2 + dx, canvas.height / 2 + dy);
+      ctx.rotate(angle);
+
+      if (doWave) {
+        const amplitude = parseFloat(document.getElementById('waveAmplitude').value);
+        const frequency = parseFloat(document.getElementById('waveFrequency').value) / 100;
+        const wavelength = parseFloat(document.getElementById('waveLength').value);
+        for (let x = 0; x < image.width; x++) {
+          const offset = Math.sin((x / wavelength) + frame * frequency) * amplitude;
+          ctx.drawImage(
+            image,
+            x, 0, 1, image.height,
+            -w / 2 + x * scale + userOffsetX,
+            -h / 2 + offset + userOffsetY,
+            1 * scale, h
+          );
+        }
       } else {
-        ctx.translate(canvas.width / 2 + dx + userOffsetX, canvas.height / 2 + dy + userOffsetY);
-        ctx.rotate(angle);
-        ctx.drawImage(image, -w / 2, -h / 2, w, h);
+        ctx.drawImage(image, -w / 2 + userOffsetX, -h / 2 + userOffsetY, w, h);
       }
       ctx.restore();
     }
-
     generateBtn.addEventListener('click', () => {
       if (!image) return alert('請先上傳圖片');
 
@@ -225,19 +180,16 @@ function getTouchDistance(touches) {
       output.innerHTML = '<p>產生中...</p>';
       downloadBtn.style.display = 'none';
 
-      const baseDelay = 80; // 固定每幀切換時間80ms
+      const baseDelay = 80;
       const rotateEnabled = rotateCheck.checked;
       const rotateSpeedValue = rotateEnabled ? parseFloat(rotateSpeed.value) : 5;
-
-      const baseFrameCount = 30; // 基礎幀數(轉速1時)
+      const baseFrameCount = 30;
       const totalFrames = Math.max(10, Math.floor(baseFrameCount * rotateSpeedValue));
 
       let frame = 0;
 
       function renderNext() {
-        // 每幀角度固定轉滿360度
         const angle = rotateEnabled ? frame * (2 * Math.PI / totalFrames) : 0;
-
         drawFrame(frame, true, angle);
         gif.addFrame(canvas, { copy: true, delay: baseDelay });
         frame++;
