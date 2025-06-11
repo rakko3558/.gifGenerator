@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 :: === Set target folder inside ./gifs/ ===
-set "target=.\gifs\rain"
+set "target=.\gifs\shakeEggplant"
 
 if not exist "%target%" (
     echo Folder not found: %target%
